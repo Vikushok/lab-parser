@@ -16,3 +16,5 @@ target/
 # Системные файлы
 .DS_Store
 Thumbs.db
+
+database_info.txt
