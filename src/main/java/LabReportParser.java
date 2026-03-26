@@ -4,7 +4,6 @@ import java.util.regex.*;
 
 public class LabReportParser {
 
-    // Словарь показателей: точное название в тексте -> (русское название, английский код, единица)
     private static final Map<String, MetricInfo> METRIC_MAP = new LinkedHashMap<>();
 
     static {
@@ -48,8 +47,6 @@ public class LabReportParser {
         addMetric("Гомоцистеин (Homocysteine)", "Гомоцистеин", "Homocysteine", "мкмоль/л");
         addMetric("Триглицериды (Triglycerides)", "Триглицериды", "Triglycerides", "ммоль/л");
         addMetric("Холестерин общий (Cholesterol total)", "Холестерин общий", "Cholesterol total", "ммоль/л");
-
-        // ЛИПИДНЫЙ ПРОФИЛЬ (с учётом разорванных строк)
         addMetric("Холестерин липопротеинов высокой плотности (ЛПВП) (HDL-C)", "Холестерин ЛПВП", "HDL-C", "ммоль/л");
         addMetric("Холестерин липопротеинов низкой плотности (ЛПНП) (LDL- C)", "Холестерин ЛПНП", "LDL-C", "ммоль/л");
         addMetric("Холестерин липопротеинов очень низкой плотности (ЛПОНП) (VLDL-C)", "Холестерин ЛПОНП", "VLDL-C", "ммоль/л");
@@ -71,21 +68,19 @@ public class LabReportParser {
         addMetric("Натрий (Sodium, Na+) в крови", "Натрий", "Na", "ммоль/л");
         addMetric("Хлор (Chloride, Сl-) в крови", "Хлор", "Cl", "ммоль/л");
 
-        // ===== ГОРМОНЫ (с точным поиском) =====
+        // ===== ГОРМОНЫ =====
         addMetric("Паратиреоидный гормон (ПТГ) (Parathyroid hormone)", "Паратиреоидный гормон", "PTH", "пмоль/л");
         addMetric("Тиреотропный гормон (ТТГ) (Thyroid-stimulating hormone)", "ТТГ", "TSH", "мМЕ/л");
         addMetric("Трийодтиронин свободный (Triiodthyronine free, FT3)", "Т3 свободный", "FT3", "пмоль/л");
         addMetric("Тироксин свободный (Thyroxine free, FT4)", "Т4 свободный", "FT4", "пмоль/л");
 
-        // ===== СЕРОЛОГИЯ (гельминтозы) =====
+        // ===== СЕРОЛОГИЯ =====
         addMetric("Антитела к эхинококку (Echinococcus) IgG [отрицательный]", "Антитела к эхинококку IgG", "Echinococcus IgG", "индекс поз.");
         addMetric("Антитела к описторхесу (Opistorhis) IgG [отрицательный]", "Антитела к описторхису IgG", "Opistorhis IgG", "индекс поз.");
         addMetric("Антитела к токсокаре (Toxocara) IgG [отрицательный]", "Антитела к токсокаре IgG", "Toxocara IgG", "индекс поз.");
         addMetric("Антитела к трихинелле (Trichinella) IgG [отрицательный]", "Антитела к трихинелле IgG", "Trichinella IgG", "индекс поз.");
         addMetric("Антитела к лямблиям (Lamblia) lgG, lgM, lgA [отрицательный]", "Антитела к лямблиям IgG/IgM/IgA", "Lamblia IgG/IgM/IgA", "индекс поз.");
         addMetric("Антитела к аскаридам (Ascaris) lgG [отрицательный]", "Антитела к аскаридам IgG", "Ascaris IgG", "индекс поз.");
-
-        // ===== СЕРОЛОГИЯ (инфекции) =====
         addMetric("Антитела к кандида (Candida) IgG [отрицательный]", "Антитела к Candida IgG", "Candida IgG", "индекс поз.");
         addMetric("Антитела к кандида (Candida) IgM [отрицательный]", "Антитела к Candida IgM", "Candida IgM", "индекс поз.");
 
@@ -135,41 +130,22 @@ public class LabReportParser {
         return content.toString();
     }
 
-    private static List<LabValue> parseMetrics(String text) {
-        List<LabValue> results = new ArrayList<>();
-        String[] lines = text.split("\n");
+    private static Double extractNumberForMetric(String line, String metricName) {
+        int pos = line.indexOf(metricName);
+        if (pos == -1) return null;
 
-        for (String line : lines) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-
-            for (Map.Entry<String, MetricInfo> entry : METRIC_MAP.entrySet()) {
-                String searchKey = entry.getKey();
-                MetricInfo info = entry.getValue();
-
-                if (line.contains(searchKey)) {
-                    Double value = extractNumber(line);
-                    String unit = extractUnit(line);
-
-                    // Если единица не найдена, используем из словаря
-                    if (unit.equals("не указана") && !info.unit.isEmpty()) {
-                        unit = info.unit;
-                    }
-
-                    if (value != null) {
-                        LabValue v = new LabValue();
-                        v.nameRu = info.nameRu;
-                        v.nameEn = info.nameEn;
-                        v.value = value;
-                        v.unit = unit;
-                        results.add(v);
-                        break;
-                    }
-                }
+        String afterMetric = line.substring(pos + metricName.length());
+        Pattern pattern = Pattern.compile("(\\d+[,.]?\\d*)\\s*(?:10\\^\\d+)?");
+        Matcher matcher = pattern.matcher(afterMetric);
+        if (matcher.find()) {
+            String numStr = matcher.group(1).replace(',', '.');
+            try {
+                return Double.parseDouble(numStr);
+            } catch (NumberFormatException e) {
+                return null;
             }
         }
-
-        return results;
+        return null;
     }
 
     private static Double extractNumber(String line) {
@@ -190,6 +166,113 @@ public class LabReportParser {
         Pattern pattern = Pattern.compile("(г/л|%|10\\^\\d+/литр|ммоль/литр|мкмоль/литр|фемтолитр|пикограмм|г/дл|мм/час|мМЕ/литр|пмоль/литр|нг/мл|Е/литр|индекс поз\\.)");
         Matcher matcher = pattern.matcher(line);
         return matcher.find() ? matcher.group(1) : "не указана";
+    }
+
+    private static List<LabValue> parseMetrics(String text) {
+        List<LabValue> results = new ArrayList<>();
+        String[] lines = text.split("\n");
+        Set<String> foundMetrics = new HashSet<>();
+
+        // === ПЕРВЫЙ ПРОХОД: ищем гормоны по полным названиям ===
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+
+            // FT3
+            if (line.contains("Трийодтиронин свободный") && line.contains("FT3")) {
+                Double value = extractNumberForMetric(line, "Трийодтиронин свободный (Triiodthyronine free, FT3)");
+                if (value != null) {
+                    LabValue v = new LabValue();
+                    v.nameRu = "Т3 свободный";
+                    v.nameEn = "FT3";
+                    v.value = value;
+                    v.unit = "пмоль/л";
+                    results.add(v);
+                    foundMetrics.add("FT3");
+                    System.out.println("DEBUG: Найден FT3 = " + value);
+                }
+            }
+
+            // FT4
+            if (line.contains("Тироксин свободный") && line.contains("FT4")) {
+                Double value = extractNumberForMetric(line, "Тироксин свободный (Thyroxine free, FT4)");
+                if (value != null) {
+                    LabValue v = new LabValue();
+                    v.nameRu = "Т4 свободный";
+                    v.nameEn = "FT4";
+                    v.value = value;
+                    v.unit = "пмоль/л";
+                    results.add(v);
+                    foundMetrics.add("FT4");
+                    System.out.println("DEBUG: Найден FT4 = " + value);
+                }
+            }
+
+            // ТТГ
+            if (line.contains("Тиреотропный гормон") && line.contains("ТТГ")) {
+                Double value = extractNumberForMetric(line, "Тиреотропный гормон (ТТГ) (Thyroid-stimulating hormone)");
+                if (value != null) {
+                    LabValue v = new LabValue();
+                    v.nameRu = "ТТГ";
+                    v.nameEn = "TSH";
+                    v.value = value;
+                    v.unit = "мМЕ/л";
+                    results.add(v);
+                    foundMetrics.add("TSH");
+                }
+            }
+
+            // Паратиреоидный гормон
+            if (line.contains("Паратиреоидный гормон") && line.contains("ПТГ")) {
+                Double value = extractNumberForMetric(line, "Паратиреоидный гормон (ПТГ) (Parathyroid hormone)");
+                if (value != null) {
+                    LabValue v = new LabValue();
+                    v.nameRu = "Паратиреоидный гормон";
+                    v.nameEn = "PTH";
+                    v.value = value;
+                    v.unit = "пмоль/л";
+                    results.add(v);
+                    foundMetrics.add("PTH");
+                }
+            }
+        }
+
+        // === ВТОРОЙ ПРОХОД: ищем остальные показатели ===
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+
+            for (Map.Entry<String, MetricInfo> entry : METRIC_MAP.entrySet()) {
+                String searchKey = entry.getKey();
+                MetricInfo info = entry.getValue();
+
+                if (foundMetrics.contains(info.nameEn)) continue;
+                if (info.nameEn.equals("FT3") || info.nameEn.equals("FT4") ||
+                        info.nameEn.equals("TSH") || info.nameEn.equals("PTH")) continue;
+
+                if (line.contains(searchKey)) {
+                    Double value = extractNumberForMetric(line, searchKey);
+                    String unit = extractUnit(line);
+
+                    if (unit.equals("не указана") && !info.unit.isEmpty()) {
+                        unit = info.unit;
+                    }
+
+                    if (value != null) {
+                        LabValue v = new LabValue();
+                        v.nameRu = info.nameRu;
+                        v.nameEn = info.nameEn;
+                        v.value = value;
+                        v.unit = unit;
+                        results.add(v);
+                        foundMetrics.add(info.nameEn);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return results;
     }
 
     private static void saveToJson(List<LabValue> values, String filename) throws IOException {
@@ -217,9 +300,7 @@ public class LabReportParser {
     }
 
     static class MetricInfo {
-        String nameRu;
-        String nameEn;
-        String unit;
+        String nameRu, nameEn, unit;
         MetricInfo(String nameRu, String nameEn, String unit) {
             this.nameRu = nameRu;
             this.nameEn = nameEn;
@@ -228,13 +309,14 @@ public class LabReportParser {
     }
 
     static class LabValue {
-        String nameRu;
-        String nameEn;
+        String nameRu, nameEn, unit;
         double value;
-        String unit;
 
         @Override
         public String toString() {
+            if (unit.isEmpty() || unit.equals("не указана")) {
+                return String.format("%s (%s): %.2f", nameRu, nameEn, value);
+            }
             return String.format("%s (%s): %.2f %s", nameRu, nameEn, value, unit);
         }
     }
